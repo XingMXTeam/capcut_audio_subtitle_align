@@ -9,9 +9,9 @@ import difflib  # Add this import
 
 # ========== 配置参数 ==========
 CUT_VIDEO_PATH = "/Users/maomao/Movies"  # 剪映项目路径
-EXPORT_SRT_PATH = "/Users/maomao/Movies/b.srt"
-ALIGNED_SRT_PATH = "/Users/maomao/Movies/aligned_subs3.srt"
-TTS_AUDIO_PATH = "/Users/maomao/Movies/a.mp3"  # 假设AI语音已生成
+EXPORT_SRT_PATH = "/Users/maomao/Movies/字幕.srt"
+ALIGNED_SRT_PATH = "/Users/maomao/Movies/aligned_subs.srt"
+TTS_AUDIO_PATH = "/Users/maomao/Movies/音频.mp3"  # 假设AI语音已生成
 
 # ========== 功能函数 ==========
 def export_from_capcut():
@@ -27,6 +27,29 @@ def export_from_capcut():
     pyautogui.click(x=150, y=300)  # 勾选导出字幕
     pyautogui.click(x=200, y=400)  # 确认导出路径
     time.sleep(2)
+
+def get_speech_duration(text, all_words):
+    """根据Whisper识别结果获取实际语音持续时间"""
+    text = re.sub(r'[^\w\s]', '', text.lower())
+    
+    # 在所有词中寻找最匹配的片段
+    best_duration = None
+    best_ratio = 0
+    
+    for i in range(len(all_words)):
+        for j in range(i + 1, min(i + 20, len(all_words) + 1)):
+            candidate_words = all_words[i:j]
+            candidate_text = ' '.join(word['word'] for word in candidate_words)
+            candidate_text = re.sub(r'[^\w\s]', '', candidate_text.lower())
+            
+            ratio = difflib.SequenceMatcher(None, text, candidate_text).ratio()
+            if ratio > best_ratio:
+                best_ratio = ratio
+                # 计算实际语音持续时间
+                best_duration = candidate_words[-1]['end'] - candidate_words[0]['start']
+    
+    # 如果找到匹配，返回实际持续时间，否则返回保守估计
+    return best_duration if best_duration and best_ratio > 0.2 else len(text) * 0.3
 
 def align_subtitles(audio_path, srt_path, output_srt_path):
     """对齐字幕与AI语音时间轴"""
@@ -99,22 +122,26 @@ def align_subtitles(audio_path, srt_path, output_srt_path):
                 best_ratio = ratio
                 best_match = (j, j + len(candidate_words))
         
-        # 设置新的时间戳
-        if best_match and best_ratio > 0.2:  # 进一步降低阈值
+        # 获取实际语音持续时间
+        speech_duration = get_speech_duration(sub['text'], all_words)
+        # 添加缓冲时间（前后各0.2秒）
+        min_duration = speech_duration + 0.4
+        
+        if best_match and best_ratio > 0.2:
             start_idx, end_idx = best_match
             new_start = all_words[start_idx]["start"]
-            new_end = new_start + sub['duration']
+            # 确保字幕持续时间不小于语音时长加缓冲
+            new_end = new_start + max(min_duration, sub['duration'])
             word_idx = end_idx
         else:
-            # 如果没找到匹配，根据总体进度估算位置
             progress = i / total_subs
             new_start = progress * total_duration
-            new_end = new_start + sub['duration']
+            new_end = new_start + max(min_duration, sub['duration'])
         
-        # 确保与前一个字幕有间隔
+        # 确保与前一个字幕有足够间隔
         if aligned and new_start < aligned[-1]["end"] + MIN_GAP:
             new_start = aligned[-1]["end"] + MIN_GAP
-            new_end = new_start + sub['duration']
+            new_end = new_start + max(min_duration, sub['duration'])
         
         aligned.append({
             "start": new_start,
@@ -124,7 +151,8 @@ def align_subtitles(audio_path, srt_path, output_srt_path):
     
     # 5. 生成新SRT
     with open(output_srt_path, 'w', encoding='utf-8') as f:
-        for idx, sub in enumerate(aligned, 1):
+        for idx, sub in enumerate(sorted(aligned, key=lambda x: x["start"]), 1):
+            # 确保按开始时间排序并添加序号
             start = _format_time(sub["start"])
             end = _format_time(sub["end"])
             f.write(f"{idx}\n{start} --> {end}\n{sub['text']}\n\n")
