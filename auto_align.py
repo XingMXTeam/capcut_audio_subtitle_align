@@ -74,32 +74,76 @@ def process_audio(audio_path, processed_audio_path):
         print(f"音频处理失败: {str(e)}")
         return audio_path
 
+def process_subtitles(srt_path):
+    """预处理字幕，处理重叠问题并确保时间顺序正确"""
+    try:
+        # 读取并解析字幕
+        subs = []
+        with open(srt_path, 'r', encoding='utf-8') as f:
+            current_sub = []
+            for line in f:
+                line = line.strip()
+                if line:
+                    current_sub.append(line)
+                elif current_sub:
+                    if len(current_sub) >= 3:  # 确保至少有序号、时间轴和文本
+                        time_parts = current_sub[1].split(' --> ')
+                        subs.append({
+                            'index': int(current_sub[0]),
+                            'start': _parse_time(time_parts[0]),
+                            'end': _parse_time(time_parts[1]),
+                            'text': '\n'.join(current_sub[2:])
+                        })
+                    current_sub = []
+        
+        # 按开始时间排序
+        subs.sort(key=lambda x: x['start'])
+        
+        # 处理重叠问题
+        MIN_GAP = 0.05  # 最小间隔时间（秒）
+        processed_subs = []
+        
+        for i, sub in enumerate(subs):
+            if i > 0:
+                prev_sub = processed_subs[-1]
+                # 如果当前字幕与前一个重叠
+                if sub['start'] < prev_sub['end']:
+                    # 如果重叠很严重（超过50%），合并字幕
+                    overlap = prev_sub['end'] - sub['start']
+                    sub_duration = sub['end'] - sub['start']
+                    if overlap > sub_duration * 0.5:
+                        prev_sub['text'] += '\n' + sub['text']
+                        prev_sub['end'] = max(prev_sub['end'], sub['end'])
+                        continue
+                    else:
+                        # 否则调整时间使其不重叠
+                        sub['start'] = prev_sub['end'] + MIN_GAP
+                        if sub['start'] + sub_duration > sub['end']:
+                            sub['end'] = sub['start'] + sub_duration
+            
+            processed_subs.append(sub)
+        
+        return processed_subs
+    
+    except Exception as e:
+        print(f"字幕预处理失败: {str(e)}")
+        return None
+
 def align_subtitles(audio_path, srt_path, output_srt_path):
     """对齐字幕与AI语音时间轴"""
     # 1. 预处理音频
     processed_audio = os.path.join(os.path.dirname(audio_path), "processed_audio.wav")
     audio_path = process_audio(audio_path, processed_audio)
     
-    # 2. 用Whisper识别语音时间戳
+    # 2. 预处理字幕
+    original_subs = process_subtitles(srt_path)
+    if not original_subs:
+        print("字幕预处理失败，退出程序")
+        return
+    
+    # 3. 用Whisper识别语音时间戳
     model = whisper.load_model("base")
     result = model.transcribe(audio_path, word_timestamps=True)
-    
-    # 3. 解析原字幕
-    original_subs = []
-    with open(srt_path, 'r', encoding='utf-8') as f:
-        subs = f.read().split('\n\n')
-        for sub in subs:
-            lines = sub.split('\n')
-            if len(lines) < 3:
-                continue
-            text = lines[2].strip()
-            time_parts = lines[1].split(' --> ')
-            original_subs.append({
-                'text': text,
-                'start_time': _parse_time(time_parts[0]),
-                'end_time': _parse_time(time_parts[1]),
-                'duration': _parse_time(time_parts[1]) - _parse_time(time_parts[0])
-            })
     
     # 4. 准备音频转录段落
     all_words = []
