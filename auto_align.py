@@ -14,20 +14,6 @@ ALIGNED_SRT_PATH = "/Users/maomao/Movies/aligned_subs.srt"
 TTS_AUDIO_PATH = "/Users/maomao/Movies/音频.mp3"  # 假设AI语音已生成
 
 # ========== 功能函数 ==========
-def export_from_capcut():
-    """自动化操作剪映导出字幕和音频"""
-    # 1. 打开剪映并定位到项目
-    pyautogui.hotkey('command', 'space')  # Mac打开Spotlight
-    pyautogui.typewrite('剪映专业版')
-    pyautogui.press('enter')
-    time.sleep(5)
-    
-    # 2. 模拟导出操作（需根据实际UI调整坐标）
-    pyautogui.click(x=100, y=200)  # 点击导出按钮
-    pyautogui.click(x=150, y=300)  # 勾选导出字幕
-    pyautogui.click(x=200, y=400)  # 确认导出路径
-    time.sleep(2)
-
 def get_speech_duration(text, all_words):
     """根据Whisper识别结果获取实际语音持续时间"""
     text = re.sub(r'[^\w\s]', '', text.lower())
@@ -247,14 +233,5 @@ def _format_time(seconds):
 
 # ========== 主流程 ==========
 if __name__ == "__main__":
-    # 1. 自动化导出数据（需先打开剪映项目）
-    # export_from_capcut()
-    
-    # 2. 对齐字幕与语音
+    # 1. 对齐字幕与语音
     align_subtitles(TTS_AUDIO_PATH, EXPORT_SRT_PATH, ALIGNED_SRT_PATH)
-    
-    # 3. 自动化导入对齐后的字幕
-    # pyautogui.click(x=300, y=200)  # 点击剪映导入按钮
-    # pyautogui.typewrite(ALIGNED_SRT_PATH)
-    # pyautogui.press('enter')
-    # print("对齐完成！")
