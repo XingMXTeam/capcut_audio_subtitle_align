@@ -51,13 +51,40 @@ def get_speech_duration(text, all_words):
     # 如果找到匹配，返回实际持续时间，否则返回保守估计
     return best_duration if best_duration and best_ratio > 0.2 else len(text) * 0.3
 
+def process_audio(audio_path, processed_audio_path):
+    """预处理音频，确保音频片段连续且不重叠"""
+    try:
+        # 读取音频文件
+        audio = AudioSegment.from_file(audio_path)
+        
+        # 如果是多轨音频，将所有轨道混合成单轨
+        if audio.channels > 1:
+            audio = audio.set_channels(1)
+        
+        # 标准化音量
+        audio = audio.normalize()
+        
+        # 确保采样率是16kHz (Whisper推荐的采样率)
+        audio = audio.set_frame_rate(16000)
+        
+        # 导出处理后的音频
+        audio.export(processed_audio_path, format="wav")
+        return processed_audio_path
+    except Exception as e:
+        print(f"音频处理失败: {str(e)}")
+        return audio_path
+
 def align_subtitles(audio_path, srt_path, output_srt_path):
     """对齐字幕与AI语音时间轴"""
-    # 1. 用Whisper识别语音时间戳
+    # 1. 预处理音频
+    processed_audio = os.path.join(os.path.dirname(audio_path), "processed_audio.wav")
+    audio_path = process_audio(audio_path, processed_audio)
+    
+    # 2. 用Whisper识别语音时间戳
     model = whisper.load_model("base")
     result = model.transcribe(audio_path, word_timestamps=True)
     
-    # 2. 解析原字幕
+    # 3. 解析原字幕
     original_subs = []
     with open(srt_path, 'r', encoding='utf-8') as f:
         subs = f.read().split('\n\n')
@@ -74,7 +101,7 @@ def align_subtitles(audio_path, srt_path, output_srt_path):
                 'duration': _parse_time(time_parts[1]) - _parse_time(time_parts[0])
             })
     
-    # 3. 准备音频转录段落
+    # 4. 准备音频转录段落
     all_words = []
     total_duration = 0
     for segment in result["segments"]:
@@ -83,7 +110,7 @@ def align_subtitles(audio_path, srt_path, output_srt_path):
             if segment["words"]:
                 total_duration = max(total_duration, segment["words"][-1]["end"])
     
-    # 4. 对齐处理
+    # 5. 对齐处理
     aligned = []
     word_idx = 0
     MIN_GAP = 0.05
@@ -149,13 +176,17 @@ def align_subtitles(audio_path, srt_path, output_srt_path):
             "text": sub['text']
         })
     
-    # 5. 生成新SRT
+    # 6. 生成新SRT
     with open(output_srt_path, 'w', encoding='utf-8') as f:
         for idx, sub in enumerate(sorted(aligned, key=lambda x: x["start"]), 1):
             # 确保按开始时间排序并添加序号
             start = _format_time(sub["start"])
             end = _format_time(sub["end"])
             f.write(f"{idx}\n{start} --> {end}\n{sub['text']}\n\n")
+
+    # 清理临时文件
+    if os.path.exists(processed_audio) and processed_audio != audio_path:
+        os.remove(processed_audio)
 
 def _parse_time(time_str):
     """解析SRT时间格式为秒数"""
