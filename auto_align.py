@@ -11,7 +11,7 @@ import datetime
 # ========== 配置参数 ==========
 CUT_VIDEO_PATH = "/Users/maomao/Movies"  # 剪映项目路径
 EXPORT_SRT_PATH = "/Users/maomao/Movies/字幕.srt"
-ALIGNED_SRT_PATH = "/Users/maomao/Movies/aligned_subs8.srt"
+ALIGNED_SRT_PATH = "/Users/maomao/Movies/aligned_subs.srt"
 TTS_AUDIO_PATH = "/Users/maomao/Movies/音频.mp3"  # 假设AI语音已生成
 
 # ========== 功能函数 ==========
@@ -95,18 +95,8 @@ def process_subtitles(srt_path):
                 prev_sub = processed_subs[-1]
                 # 如果当前字幕与前一个重叠
                 if sub['start'] < prev_sub['end']:
-                    # 如果重叠很严重（超过50%），合并字幕
-                    overlap = prev_sub['end'] - sub['start']
-                    sub_duration = sub['end'] - sub['start']
-                    if overlap > sub_duration * 0.5:
-                        prev_sub['text'] += '\n' + sub['text']
-                        prev_sub['end'] = max(prev_sub['end'], sub['end'])
-                        continue
-                    else:
-                        # 否则调整时间使其不重叠
-                        sub['start'] = prev_sub['end'] + MIN_GAP
-                        if sub['start'] + sub_duration > sub['end']:
-                            sub['end'] = sub['start'] + sub_duration
+                    # 不再合并字幕，只调整时间使其不重叠
+                    sub['start'] = prev_sub['end'] + MIN_GAP
             
             processed_subs.append(sub)
         
@@ -182,19 +172,22 @@ def align_subtitles(audio_path, srt_path, output_srt_path):
         
         # 获取实际语音持续时间
         speech_duration = get_speech_duration(sub['text'], all_words)
-        # 添加缓冲时间（前后各0.2秒）
-        min_duration = speech_duration + 0.4
+        # 调整字幕持续时间计算
+        # 根据文本长度估算基础持续时间
+        base_duration = len(sub['text']) * 0.25  # 每个字符大约0.25秒
+        # 添加额外缓冲时间
+        min_duration = max(base_duration, speech_duration) + 0.6  # 增加前后缓冲时间
         
         if best_match and best_ratio > 0.2:
             start_idx, end_idx = best_match
             new_start = all_words[start_idx]["start"]
-            # 确保字幕持续时间不小于语音时长加缓冲
-            new_end = new_start + max(min_duration, sub['end'] - sub['start'])
+            # 确保字幕持续时间足够长
+            new_end = new_start + min_duration
             word_idx = end_idx
         else:
             progress = i / total_subs
             new_start = progress * total_duration
-            new_end = new_start + max(min_duration, sub['end'] - sub['start'])
+            new_end = new_start + min_duration
         
         # 确保与前一个字幕有足够间隔
         if aligned and new_start < aligned[-1]["end"] + MIN_GAP:
