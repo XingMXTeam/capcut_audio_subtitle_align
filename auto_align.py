@@ -6,11 +6,12 @@ import re
 import pyautogui
 import time
 import difflib  # Add this import
+import datetime
 
 # ========== 配置参数 ==========
 CUT_VIDEO_PATH = "/Users/maomao/Movies"  # 剪映项目路径
 EXPORT_SRT_PATH = "/Users/maomao/Movies/字幕.srt"
-ALIGNED_SRT_PATH = "/Users/maomao/Movies/aligned_subs.srt"
+ALIGNED_SRT_PATH = "/Users/maomao/Movies/aligned_subs8.srt"
 TTS_AUDIO_PATH = "/Users/maomao/Movies/音频.mp3"  # 假设AI语音已生成
 
 # ========== 功能函数 ==========
@@ -188,17 +189,17 @@ def align_subtitles(audio_path, srt_path, output_srt_path):
             start_idx, end_idx = best_match
             new_start = all_words[start_idx]["start"]
             # 确保字幕持续时间不小于语音时长加缓冲
-            new_end = new_start + max(min_duration, sub['duration'])
+            new_end = new_start + max(min_duration, sub['end'] - sub['start'])
             word_idx = end_idx
         else:
             progress = i / total_subs
             new_start = progress * total_duration
-            new_end = new_start + max(min_duration, sub['duration'])
+            new_end = new_start + max(min_duration, sub['end'] - sub['start'])
         
         # 确保与前一个字幕有足够间隔
         if aligned and new_start < aligned[-1]["end"] + MIN_GAP:
             new_start = aligned[-1]["end"] + MIN_GAP
-            new_end = new_start + max(min_duration, sub['duration'])
+            new_end = new_start + max(min_duration, sub['end'] - sub['start'])
         
         aligned.append({
             "start": new_start,
